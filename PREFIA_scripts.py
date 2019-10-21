@@ -9,8 +9,7 @@ import AC_tools as AC
 import pandas as pd
 from netCDF4 import Dataset
 from datetime import datetime as datetime_
-#import matplotlib.dates as mdates
-#import time
+from time import gmtime, strftime
 import datetime as datetime
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -29,14 +28,17 @@ def main():
 #    print_lines4HISTORY_rc_config()
 
     # - Process output to files for submission
-    processing4AFrica_IC( res=res )
+#    processing4PREFIA_IC( res=res )
 
     # - Do checks on output
 #    check_values4file()
 #    check_units_in_outputted_files()
 
+    # Update the NetCDF variables following NetCDF checker.
+    update_files_following_CF_checker()
 
-def processing4AFrica_IC(res='4x5'):
+
+def processing4PREFIA_IC(res='4x5'):
     """
     Process output for PREFIA runs
     """
@@ -53,7 +55,7 @@ def processing4AFrica_IC(res='4x5'):
 #    runs2use = list( run_dict.keys() )[:2] # Just run for the 1st two
     runs2use = list( run_dict.keys() )
     runs2use = [[i] for i in runs2use]
-#    runs2use = [ ['GFAS.PP'], ] # just run for Eloise's
+#    runs2use = [ ['GFAS.PP'], ] # just run for Eloise's powerplant emissions
     print( 'Running file processing for:', runs2use )
     p = Pool( len(runs2use) )
     # Use Pool to concurrently process all file sets
@@ -63,7 +65,7 @@ def processing4AFrica_IC(res='4x5'):
 
 def combine_output2_1_file_per_day( runs2use, run_dict=None, res='4x5' ):
     """
-    Combine the PREFIA African AQ files into daily files for the inter-comparison
+    Combine the PREFIA African AQ files into daily files for PREFIA inter-comparison
     """
     # format of outputted file
     FileStr = 'PREFIA_York_GEOSChem_{}_{}_{}'
@@ -97,6 +99,7 @@ def combine_output2_1_file_per_day( runs2use, run_dict=None, res='4x5' ):
                                            rtn_dates4files=True)
 
         for day in dates:
+#        for day in dates[-31:]: # Testing: just process December
 #        for day in dates[:194]: # Testing: just process the first half
 #        for day in dates[193:]: # Testing: just process the second half
             # Check all the files are present and that there is one of them
@@ -143,8 +146,7 @@ def combine_output2_1_file_per_day( runs2use, run_dict=None, res='4x5' ):
                 vars2add = [i for i in dsNew.data_vars if i not in vars2rm]
                 ds = xr.merge( [ds, dsNew[vars2add] ] )
                 del dsNew
-#                ds = ds.combine_first( dsNew[[i for i in dsNew if i not in vars2rm]] )
-            # remove any unneeded spatial dimensions
+            # Remove any unneeded spatial dimensions
             ds = remove_unneeded_vertical_dimensions(ds=ds)
             # Update any units to those requested for PREFIA...
             ds = convert_IC_ds_units(ds=ds)  # loosing units here
@@ -160,7 +162,7 @@ def combine_output2_1_file_per_day( runs2use, run_dict=None, res='4x5' ):
             # Now save the file for the given day.
             filename = FileStr.format( res, run, day_str)
             ds.to_netcdf( '{}/{}.nc'.format(folder,filename) )
-            # remove the used files from memory
+            # Remove the used files from memory
             del ds
             gc.collect()
 
@@ -479,41 +481,41 @@ def check_values4file():
 #    res = '2x2.5' # for production runs
     filestr = '*{}*v12.5*UT*PREFIA*'.format(res)
     folder = '/users/ts551/scratch/GC/rundirs/'
-    # setup the run directories
+    # Setup the run directories
     folders = glob.glob( folder + filestr )
     names = [i.split('UT.')[-1] for i in folders ]
     run_dict = dict( zip(names, folders))
     runs = list(run_dict.keys())
 
     # -- Perform checks on emisisons
-    # read in the HEMCO files into a dataset for each run.
+    # Read in the HEMCO files into a dataset for each run.
     ds_d = {}
     for run in runs:
         print( run, run_dict[ run ] )
         # Get the HEMCO files as a dataset
         folder2use = '{}/OutputDir/'.format( run_dict[run] )
-        # check the number of files
+        # Check the number of files
         files2use = glob.glob(folder2use+'*HEMCO*')
 #        print(run, len(files2use), len(files2use)/30/24 )
-        # open the HEMCO files as a dataset
+        # Open the HEMCO files as a dataset
         ds = AC.get_HEMCO_diags_as_ds(wd=folder2use)
-        # only consider the production year
+        # Only consider the production year
         ds = ds.sel(time=ds['time.year']>2016)
-        # resample this to monthly
-        # NOTE: 4x5 output is only monthly
+        # Resample this to monthly
+        # NOTE: 4x5 output is only monthly (2x2.5 is daily)
         if res == '2x2.5':
             ds = ds.resample({'time':'M'})
-        # store dataset
+        # Store dataset
         ds_d[run] = ds.copy()
         del ds
 
     # Now process dataset
     for run in runs:
-        # select dataset
+        # Select dataset
         ds = ds_d[run]
-        # sum over all levels
+        # Sum over all levels
         ds = ds.sum(dim='lev')
-        # remove the area unit and convert time to per month
+        # Remove the area unit and convert time to per month
         EmisVars = [i for i in ds.data_vars if 'Emis' in i ]
         for var in EmisVars:
             # Convert to grams
@@ -522,11 +524,11 @@ def check_values4file():
             ds[var].values = ds[var] * ds['AREA']
             # convert /s to / month
             ds[var].values = ds[var] *60 *60*24 *31
-        # dave the updated dataset
+        # Save the updated dataset
         ds_d[run] = ds.copy()
         del ds
 
-    # print out the totals
+    # Print out the totals
     df = pd.DataFrame()
     TotalVars = [i for i in ds_d[runs[0]].data_vars if '_Total' in i ]
     for run in runs:
@@ -538,7 +540,7 @@ def check_values4file():
             S[var] = ds[var].values.sum()
         df[run] = S
 
-    # print out the totals
+    # Print out the totals
     df = df/ 1E12
     df.to_csv('PREFIA_Emissions_totals_Global_{}.csv'.format(res))
     # Also save in percentage terms
@@ -547,7 +549,7 @@ def check_values4file():
         df[col] = (df[col]-df[REF])/df[REF]*100
     df.to_csv('PREFIA_Emissions_totals_Global_pcent_{}.csv'.format(res))
 
-    # only consider over Africa
+    # Only consider over Africa
     df = pd.DataFrame()
     TotalVars = [i for i in ds_d[runs[0]].data_vars if '_Total' in i ]
     for run in runs:
@@ -568,7 +570,7 @@ def check_values4file():
             S[var] = ds_tmp[var].values.sum()
         df[run] = S
 
-    # print out the totals
+    # Print out the totals
     df = df/ 1E12
     df.to_csv('PREFIA_Emissions_totals_Africa_{}.csv'.format(res))
     # Also save in percentage terms
@@ -714,7 +716,7 @@ def get_files_in_folder4prefix( folder=None, prefix=None,  rtn_dates4files=False
 
 def get_dictionary_of_IC_runs(res='4x5'):
     """
-    Get a dictionary of the Africa inter-comparison runs and their locations
+    Get a dictionary of the Africa PREFIA inter-comparison runs and their locations
     """
     RunRoot = '/users/ts551/scratch/GC/rundirs/'
     RunStr = 'geosfp_2x25_tropchem.v12.5.0.UT.PREFIA{}'
@@ -787,6 +789,106 @@ def print_lines4HISTORY_rc_config():
     print(pstr1.format(specs2use[0]))
     for spec in specs2use[1:]:
         print(pstr2.format(spec))
+
+
+def update_files_following_CF_checker():
+    """
+    Update NetCDF files following Puma CF checker
+    """
+    # Get the model run names and locations
+    version = "0.1.0"
+    res='2x2.5' # production run resolution.
+    run_dict = get_dictionary_of_IC_runs(res=res)
+    # Loop by model run and update the datasets
+    runs = list(run_dict.keys())
+    print(runs)
+    for run in runs:
+        # Get the location of the data
+        folder = run_dict[ run ]
+        # Get the files
+        files = list(sorted(glob.glob( folder+'PREFIA*' )))
+        # Loop the files
+        for file in files:
+            filename = file.split('/')[-1]
+            print(run, filename)
+            # open as a dataset
+            ds = xr.open_dataset( file )
+            # Update the variables
+            ds = add_missing_globl_and_variables_attrs( ds=ds, run=run )
+            # Save the updated file
+            Filestr = '{}_v{}.nc'
+            Newfilename = Filestr.format( filename.split('.nc')[0], version)
+            ds.to_netcdf(folder+Newfilename)
+#            ds.to_netcdf('./'+Newfilename) # Testing
+            del ds
+            gc.collect()
+
+
+def add_missing_globl_and_variables_attrs(ds, run='GFED.DICE', conventions='CF-1.3'):
+    """
+    Add the missing global and variable attributes
+    """
+    # - Global attributes updates
+    attrs = ds.attrs
+    # Add title
+    title_str = "GEOS-Chem model run output ('{}') for PREFIA intercomparison"
+    attrs['title'] = title_str.format(run)
+    # Add 'Conventions' to global meta data
+    attrs['conventions'] = conventions
+    # Add history attribute
+    history_str = 'Last modified on'
+    attrs['history'] = history_str.format(strftime("%B %d %Y", gmtime()))
+    # Add reference
+    attrs['reference'] = 'The International GEOS-Chem User Community. (2019, September 9). geoschem/geos-chem: GEOS-Chem 12.5.0 release (Version 12.2.0). Zenodo. http://doi.org/10.5281/zenodo.3403111'
+    # Contact
+    attrs['contact'] = 'tomas.sherwen@york.ac.uk'
+    # Explicitly state the default format
+    attrs['format'] = 'NETCDF4'
+    # Store updates
+    ds.attrs = attrs
+
+    # -- Variable attribute updates
+    # - variable attribues
+    var2use = 'AOD_ALL_550nm'
+    attrs = ds[var2use].attrs
+    # Add long_name for 'AOD_ALL_550nm'
+    units = '1'
+    averaging_method = 'time-averaged'
+    attrs['long_name'] = 'Optical depth for aerosol at 550 nm'
+    attrs['averaging_method'] = averaging_method
+    attrs['units'] = units
+    ds[var2use].attrs = attrs
+    # - units and averaging methhod to Wetdep
+    units = 'μg/m2/hr'
+    averaging_method = 'time-averaged'
+    vars2use = [i for i in ds.data_vars if 'WetDep' in i]
+    for var2use in vars2use:
+        attrs = ds[var2use].attrs
+        attrs['units'] = units
+        attrs['averaging_method'] = averaging_method
+        # Store updates
+        ds[var2use].attrs = attrs
+    # - Add units to PM10, PM2.5
+    vars2use = ['cnc_PM10', 'cnc_PM25']
+    units = 'μg/m3'
+    averaging_method = 'time-averaged'
+    for var2use in vars2use:
+        attrs = ds[var2use].attrs
+        attrs['units'] = units
+        attrs['averaging_method'] = averaging_method
+        # Add long name
+#         try:
+#             LaTeX_var = AC.latex_name( var2use )
+#         except KeyError:
+#             if var2use == 'PM25':
+#                 LaTeX_var = 'PM$_{2.5}$'
+        LaTeX_var = var2use
+        attrs['long_name'] = 'Dry mixing ratio of species {}'.format(LaTeX_var)
+        # Store updates
+        ds[var2use].attrs = attrs
+
+    return ds
+
 
 
 if __name__ == "__main__":
