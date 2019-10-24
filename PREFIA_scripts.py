@@ -31,6 +31,7 @@ def main():
 #    processing4PREFIA_IC( res=res )
 
     # - Do checks on output
+#    get_global_overview_stats_on_model_runs()
 #    check_values4file()
 #    check_units_in_outputted_files()
 
@@ -714,24 +715,69 @@ def get_files_in_folder4prefix( folder=None, prefix=None,  rtn_dates4files=False
         return files
 
 
-def get_dictionary_of_IC_runs(res='4x5'):
+def get_global_overview_stats_on_model_runs(res='4x5')
+    """
+    Process bpch files to NetCDF, then get general stats on runs
+    """
+    # Get the model run locations, then process to NetCDF from bpch
+    run_dict = get_dictionary_of_IC_runs(res=res, NetCDF=False)
+    runs =  list(sorted(run_dict.keys()))
+    for run in runs:
+        folder = run_dict[run]
+        print(run, run_dict[run])
+        a = AC.get_O3_burden( folder )
+        print(run, run_dict[run], a.sum())
+    # Get summary stats on model runs.
+    df = AC.get_general_stats4run_dict_as_df(run_dict=run_dict, REF1='GFAS.DICE', res=res)
+    # Setup a name for the csv file
+    filestr = 'PREFIA_summary_stats_{}{}.csv'
+    if res == '4x5':
+        filename = filestr.format(res,'')
+    elif res == '2x2.5':
+        filename = filestr.format(res,'_VALUES_ARE_APROX_bpch_files_incomplete')
+    else:
+        print("WARNING: resolution ('{}') not known".format(res))
+    # Save summary stats to disk
+    df.T.to_csv( filename )
+
+
+def get_dictionary_of_IC_runs(res='4x5', NetCDF=True):
     """
     Get a dictionary of the Africa PREFIA inter-comparison runs and their locations
     """
     RunRoot = '/users/ts551/scratch/GC/rundirs/'
-    RunStr = 'geosfp_2x25_tropchem.v12.5.0.UT.PREFIA{}'
-    d = {
-    # Initial testing
-#    'TEST' : RunRoot +'/geosfp_4x5_standard.v12.4.0.IC.2months/',
-    # Expanded testing
-#    'TEST.II' : RunRoot +'/geosfp_4x5_standard.v12.4.0.IC.2months.repeat/',
-    # Production output locations and names
-    'GFED.DICE' : RunRoot + RunStr.format('.repeat/OutputDir/'),
-    'GFAS.DICE' : RunRoot + RunStr.format('.GFAS.repeat/OutputDir/'),
-    'GFAS.DICE.PP' : RunRoot + RunStr.format('.EloisePP/OutputDir/'),
-    'DACCIWA' : RunRoot + RunStr.format('.DACCIWA/OutputDir/'),
-    'CEDS' : RunRoot + RunStr.format('.CEDS/OutputDir/'),
-    }
+    # Get the NetCDF or bpch file location
+    ExStr = ''
+    if NetCDF:
+        ExStr = '/OutputDir/'
+    # Get the model run names and directories for a given resolution
+    if res == '4x5':
+        RunStr = 'geosfp_4x5_tropchem.v12.5.0.UT.PREFIA{}{}'
+        d = {
+        # Initial testing
+    #    'TEST' : RunRoot +'/geosfp_4x5_standard.v12.4.0.IC.2months/',
+        # Expanded testing
+    #    'TEST.II' : RunRoot +'/geosfp_4x5_standard.v12.4.0.IC.2months.repeat/',
+        # Production output locations and names
+        'GFED.DICE' : RunRoot + RunStr.format('/', ExStr),
+        'GFAS.DICE' : RunRoot + RunStr.format('.GFAS/', ExStr),
+        'GFAS.DICE.PP' : RunRoot + RunStr.format('.GFAS.EloisePP/', ExStr),
+        'DACCIWA' : RunRoot + RunStr.format('.GFAS.DACCIWA/', ExStr),
+        'CEDS' : RunRoot + RunStr.format('.GFAS.CEDS/', ExStr),
+        }
+    elif res == '2x2.5':
+        RunStr = 'geosfp_2x25_tropchem.v12.5.0.UT.PREFIA{}{}'
+        d = {
+        'GFED.DICE' : RunRoot + RunStr.format('.repeat/', ExStr),
+        'GFAS.DICE' : RunRoot + RunStr.format('.GFAS.repeat/', ExStr),
+        'GFAS.DICE.PP' : RunRoot + RunStr.format('.EloisePP/', ExStr),
+        'DACCIWA' : RunRoot + RunStr.format('.DACCIWA/', ExStr),
+        'CEDS' : RunRoot + RunStr.format('.CEDS/', ExStr),
+        }
+    else:
+        print("WARNING: Resolution ('{}') not found".format(res))
+        sys.exit()
+
     return d
 
 
