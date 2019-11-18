@@ -756,21 +756,22 @@ def update_names_in_ds(ds=None):
     """
     Update the names used in the dataset
     """
-    # update names from SpeciesConc_<> to  cnc_<substance>
+    # Update names from SpeciesConc_<> to  cnc_<substance>
     prefix = 'SpeciesConc'
     Species_vars = [i for i in ds.data_vars if i.startswith(prefix)]
     newprefix = 'cnc'
     NewVars = [newprefix+i.split(prefix)[-1] for i in Species_vars]
     name_dict = dict(zip(Species_vars, NewVars))
+    # Now rename all varibles at once
+    ds = ds.rename(name_dict=name_dict)
 
-    # update names from <>concAfterChem to  cnc_<substance>
+    # Update names from <>concAfterChem to  cnc_<substance>
     suffix = 'concAfterChem'
     vars = [i for i in ds.data_vars if i.endswith(suffix)]
     newprefix = 'cnc_'
     NewVars = [newprefix+i.split(suffix)[0] for i in vars]
     name_dict = dict(zip(vars, NewVars))
-
-    # - Now rename all varibles at once
+    # Now rename all varibles at once
     ds = ds.rename(name_dict=name_dict)
 
     # - Return dataset
@@ -916,13 +917,12 @@ def print_lines4HISTORY_rc_config():
         print(pstr2.format(spec))
 
 
-def update_files_following_CF_checker():
+def update_files_following_CF_checker(version='0.1.1'):
     """
     Update NetCDF files following Puma CF checker
     """
     # Get the model run names and locations
-    version = "0.1.1"
-    res = '2x2.5'  # production run resolution.
+    res = '2x2.5' # production run resolution.
     run_dict = get_dictionary_of_IC_runs(res=res)
     # Loop by model run and update the datasets
     runs = list(run_dict.keys())
@@ -931,20 +931,34 @@ def update_files_following_CF_checker():
         # Get the location of the data
         folder = run_dict[run]
         # Get the files
-        files = list(sorted(glob.glob(folder+'PREFIA*')))
+        files = list(sorted(glob.glob('{}/{}*{}*'.format(folder, 'PREFIA', version))))
         # Loop the files
+#        for file in files:
         for file in files:
             filename = file.split('/')[-1]
             print(run, filename)
             # open as a dataset
             ds = xr.open_dataset(file)
             # Update the variables
-            ds = add_missing_globl_and_variables_attrs(ds=ds, run=run)
+#            ds = add_missing_globl_and_variables_attrs(ds=ds, run=run)
+            # Update the variable names
+            prefix = 'SpeciesConc'
+            Species_vars = [i for i in ds.data_vars if i.startswith(prefix)]
+            newprefix = 'cnc'
+            NewVars = [newprefix+i.split(prefix)[-1] for i in Species_vars]
+            name_dict = dict(zip(Species_vars, NewVars))
+            # Now rename all varibles at once
+            ds = ds.rename(name_dict=name_dict)
             # Save the updated file
-            Filestr = '{}_v{}.nc'
-            Newfilename = Filestr.format(filename.split('.nc')[0], version)
-            ds.to_netcdf(folder+Newfilename)
-#            ds.to_netcdf('./'+Newfilename) # Testing
+            UseNewFilename = False
+            if UseNewFilename:
+                Filestr = '{}_v{}.nc'
+                Newfilename = Filestr.format(filename.split('.nc')[0], version)
+                ds.to_netcdf(folder+Newfilename)
+            else:
+                NewFolder = folder + '/SC_name_update/'
+                print( NewFolder, filename )
+                ds.to_netcdf(NewFolder+filename) # Testing
             del ds
             gc.collect()
 
